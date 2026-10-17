@@ -129,7 +129,7 @@ async def generate_certificate(request: CertificateGenerateRequest):
 # End-to-End 1-Click Pipeline Endpoint
 # -------------------------------------------------------------
 @router.post("/pipeline/run-case/{case_id}", tags=["Pipeline 1-Click Execution"])
-async def run_pipeline_for_case(case_id: str, customs_station: str = "INNSA1"):
+async def run_pipeline_for_case(case_id: str, customs_station: str = "INNSA1", fast_mode: bool = True):
     """
     Executes the entire 3-stage pipeline in a single call for a demo case:
     1. Parse all shipping documents in the case
@@ -146,7 +146,8 @@ async def run_pipeline_for_case(case_id: str, customs_station: str = "INNSA1"):
         parsed = await parser_service.parse_document(
             text=doc_info["raw_text"],
             doc_type_hint=doc_info["doc_type"],
-            filename=f"{doc_info['doc_type'].value}.txt"
+            filename=f"{doc_info['doc_type'].value}.txt",
+            use_llm=not fast_mode
         )
         parsed_docs.append(parsed)
 
