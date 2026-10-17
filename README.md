@@ -110,19 +110,6 @@ To use a different model, set `OLLAMA_MODEL` in `backend/.env`.
 
 ---
 
-## Limitations
-
-This is a hackathon MVP. Known gaps:
-
-- **Fallback values.** When the rule-based parser can't find a field, it fills in fixed sample values (for example, vessel "MSC CLARA", port of loading Shanghai). Some extracted fields, and the certificate, can show details that aren't in the uploaded document.
-- **Model speed.** Gemma extraction takes about 90 seconds per document on a laptop and may hit the backend's 90-second model timeout. In that case it falls back to the rule-based parser.
-- **Scanned PDFs** aren't supported (no OCR yet).
-- **Not an official document.** The certificate is a pre-check report, not an ICEGATE filing or customs approval.
-- **Estimates.** Penalty and demurrage figures use fixed rates from `backend/app/core/config.py`, not live tariff or port data.
-- **Sample-mode fallback.** If the backend is unreachable, sample cases show pre-built results. Uploads show an error instead.
-
----
-
 ## Repository structure
 
 ```
