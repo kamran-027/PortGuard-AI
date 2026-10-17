@@ -1,57 +1,96 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  FileText,
-  Sparkles,
-  AlertOctagon,
-  CheckCircle2,
-  Copy,
-  Check,
-  Container,
-  Scale,
-  Hash,
-  Building,
-  UploadCloud,
-  Play,
-  RotateCw,
-  Eye,
-  FileCode,
-} from "lucide-react";
+import { AlertCircle, Check, Copy, Loader2 } from "lucide-react";
 import {
   ParsedDocument,
   DemoCaseSummary,
-  DemoCaseDetail,
-  DocumentType,
+  SourceDoc,
+  UploadEntry,
+  UploadSlot,
 } from "@/lib/types";
+import UploadPanel from "./UploadPanel";
+import {
+  Button,
+  Card,
+  DOC_LABELS,
+  Field,
+  SectionHeader,
+  Segmented,
+  shortTitle,
+} from "./ui";
+
+export type DocSource = "sample" | "upload";
 
 interface Stage1UploadProps {
+  source: DocSource;
+  onSourceChange: (source: DocSource) => void;
   demoCases: DemoCaseSummary[];
   activeCaseId: string;
   onSelectCase: (caseId: string) => void;
+  uploads: Partial<Record<UploadSlot, UploadEntry>>;
+  onUploadChange: (slot: UploadSlot, file: File | null) => void;
+  /** Source documents for the current selection, index-aligned with parsedDocuments. */
+  documents: SourceDoc[];
   parsedDocuments: ParsedDocument[];
-  demoDetail: DemoCaseDetail | null;
   isLoading: boolean;
+  progress?: string | null;
+  error?: string | null;
+  canRun: boolean;
   onRunPipeline: () => void;
-  onCustomParse?: (text: string, type: DocumentType) => void;
+}
+
+const kg = (n?: number) => (n || n === 0 ? `${n.toLocaleString()} kg` : undefined);
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="mb-1 text-sm font-medium text-zinc-900">{title}</h4>
+      <dl className="divide-y divide-zinc-100">{children}</dl>
+    </div>
+  );
+}
+
+function SourceView({ doc }: { doc?: SourceDoc }) {
+  if (doc?.pdf_url) {
+    return (
+      <iframe
+        src={doc.pdf_url}
+        title={doc.name ?? "Uploaded PDF"}
+        className="h-[32rem] w-full rounded-md border border-zinc-200 bg-zinc-50"
+      />
+    );
+  }
+  return (
+    <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-4 font-mono text-[13px] leading-relaxed text-zinc-700">
+      {doc?.raw_text || (doc ? "No source text available." : "Loading…")}
+    </pre>
+  );
 }
 
 export default function Stage1Upload({
+  source,
+  onSourceChange,
   demoCases,
   activeCaseId,
   onSelectCase,
+  uploads,
+  onUploadChange,
+  documents,
   parsedDocuments,
-  demoDetail,
   isLoading,
+  progress,
+  error,
+  canRun,
   onRunPipeline,
 }: Stage1UploadProps) {
   const [selectedDocIndex, setSelectedDocIndex] = useState(0);
   const [viewMode, setViewMode] = useState<"structured" | "raw">("structured");
   const [copied, setCopied] = useState(false);
 
-  // Active raw text and parsed doc
-  const currentRawDoc = demoDetail?.documents?.[selectedDocIndex];
-  const currentParsedDoc = parsedDocuments?.[selectedDocIndex];
+  const docIndex = Math.min(selectedDocIndex, Math.max(documents.length - 1, 0));
+  const currentSource = documents[docIndex];
+  const doc = parsedDocuments?.[docIndex];
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -60,363 +99,234 @@ export default function Stage1Upload({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Demo Case Selector Bar */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 backdrop-blur-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-500/20 text-cyan-400 font-bold text-xs">
-                1
-              </span>
-              <h2 className="text-base font-bold uppercase tracking-wider text-slate-100">
-                1-Click Consignment Demo Scenarios
-              </h2>
-            </div>
-            <p className="mt-1 text-xs text-slate-400">
-              Select an automated shipment test case to feed the on-device AI customs parser & cross-audit engine.
-            </p>
-          </div>
+    <section className="space-y-4">
+      <SectionHeader
+        title="Documents"
+        description="Fields extracted from each shipping document."
+        actions={
+          <Button variant="primary" onClick={onRunPipeline} disabled={isLoading || !canRun}>
+            {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isLoading ? "Running…" : "Run checks"}
+          </Button>
+        }
+      />
 
-          {/* Quick Demo Case Pills */}
-          <div className="flex flex-wrap gap-2.5">
-            <button
-              onClick={() => onSelectCase("clean_consignment")}
-              disabled={isLoading}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all shadow-sm ${
-                activeCaseId === "clean_consignment"
-                  ? "border border-emerald-500/60 bg-emerald-950/80 text-emerald-200 ring-2 ring-emerald-500/30"
-                  : "border border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600 hover:bg-slate-750"
-              }`}
-            >
-              <Sparkles className="h-4 w-4 text-emerald-400" />
-              <span>⚡ Clean Consignment (Golden Path)</span>
-              <span className="rounded bg-emerald-900/80 px-1.5 py-0.2 text-[9px] text-emerald-300 uppercase">
-                0 Errors
-              </span>
-            </button>
-
-            <button
-              onClick={() => onSelectCase("high_risk_discrepancy")}
-              disabled={isLoading}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all shadow-sm ${
-                activeCaseId === "high_risk_discrepancy"
-                  ? "border border-rose-500/60 bg-rose-950/80 text-rose-200 ring-2 ring-rose-500/30"
-                  : "border border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600 hover:bg-slate-750"
-              }`}
-            >
-              <AlertOctagon className="h-4 w-4 text-rose-400" />
-              <span>🚨 Severe Demurrage Risk (Hero Story)</span>
-              <span className="rounded bg-rose-900/80 px-1.5 py-0.2 text-[9px] text-rose-300 uppercase">
-                1,450kg Delta
-              </span>
-            </button>
-          </div>
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {/* Active case description banner */}
-        {demoDetail && (
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <span className="font-semibold text-cyan-400">{demoDetail.title}: </span>
-              <span className="text-slate-300">{demoDetail.description}</span>
-            </div>
-            <div className="flex items-center gap-3 shrink-0 text-[11px] text-slate-400">
-              <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-cyan-300">
-                {demoDetail.port}
-              </span>
-              <span className="rounded bg-slate-800 px-2 py-0.5 text-slate-300">
-                {demoDetail.cargo}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Document Inspector Card */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
-        {/* Document Tabs Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            {demoDetail?.documents.map((doc, idx) => {
-              const parsed = parsedDocuments[idx];
-              const docName =
-                doc.doc_type === "BILL_OF_LADING"
-                  ? "Ocean Bill of Lading"
-                  : doc.doc_type === "COMMERCIAL_INVOICE"
-                  ? "Commercial Invoice"
-                  : "Packing List";
-
-              return (
-                <button
-                  key={doc.doc_number || idx}
-                  onClick={() => setSelectedDocIndex(idx)}
-                  className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${
-                    selectedDocIndex === idx
-                      ? "border-cyan-500/50 bg-cyan-950/50 text-cyan-200 shadow-sm"
-                      : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                  }`}
-                >
-                  <FileText className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>{docName}</span>
-                  <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">
-                    {parsed?.doc_number || doc.doc_number}
-                  </span>
-                </button>
-              );
-            })}
+      <Card>
+        {/* Source: sample case or the user's own documents */}
+        <div className="border-b border-zinc-200 p-5">
+          <div className="mb-3">
+            <Segmented
+              disabled={isLoading}
+              value={source}
+              onChange={(v) => {
+                setSelectedDocIndex(0);
+                onSourceChange(v);
+              }}
+              options={[
+                { value: "upload", label: "Your documents" },
+                { value: "sample", label: "Sample case" },
+              ]}
+            />
           </div>
 
-          {/* Toggle between Structured and Raw View */}
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5 text-xs">
-              <button
-                onClick={() => setViewMode("structured")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition ${
-                  viewMode === "structured"
-                    ? "bg-slate-800 text-cyan-300 shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                <span>Extracted Schema</span>
-              </button>
-              <button
-                onClick={() => setViewMode("raw")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition ${
-                  viewMode === "raw"
-                    ? "bg-slate-800 text-cyan-300 shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <FileCode className="h-3.5 w-3.5" />
-                <span>Raw Manifest</span>
-              </button>
-            </div>
-
-            {viewMode === "raw" && currentRawDoc && (
-              <button
-                onClick={() => handleCopy(currentRawDoc.raw_text)}
-                className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-300 transition hover:bg-slate-750 hover:text-white"
-                title="Copy raw text"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-400" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" /> Copy
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* View Mode Content */}
-        <div className="mt-6">
-          {viewMode === "structured" && currentParsedDoc ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {/* Box 1: Vessel & Voyage */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Container className="h-4 w-4 text-cyan-400" />
-                  <span>Vessel & Transit</span>
-                </div>
-                <div className="mt-2 space-y-1.5 text-xs">
-                  <div>
-                    <span className="text-slate-500">Vessel: </span>
-                    <span className="font-semibold text-slate-200">
-                      {currentParsedDoc.vessel_name || "N/A"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Voyage: </span>
-                    <span className="font-mono text-slate-200">
-                      {currentParsedDoc.voyage_number || "N/A"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Origin: </span>
-                    <span className="text-slate-200">
-                      {currentParsedDoc.port_of_loading || "N/A"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Destination: </span>
-                    <span className="font-semibold text-cyan-300">
-                      {currentParsedDoc.port_of_discharge || "N/A"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Incoterm: </span>
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">
-                      {currentParsedDoc.incoterm || "FOB"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Box 2: Weights & Volume */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Scale className="h-4 w-4 text-emerald-400" />
-                  <span>Declared Weights</span>
-                </div>
-                <div className="mt-2 space-y-1.5 text-xs">
-                  <div>
-                    <span className="text-slate-500">Gross Weight: </span>
-                    <span className="font-mono font-bold text-slate-100">
-                      {currentParsedDoc.weights?.gross_weight_kg?.toLocaleString()} kg
-                    </span>
-                  </div>
-                  {currentParsedDoc.weights?.net_weight_kg && (
-                    <div>
-                      <span className="text-slate-500">Net Weight: </span>
-                      <span className="font-mono text-slate-300">
-                        {currentParsedDoc.weights.net_weight_kg.toLocaleString()} kg
-                      </span>
-                    </div>
-                  )}
-                  {currentParsedDoc.weights?.tare_weight_kg && (
-                    <div>
-                      <span className="text-slate-500">Tare Weight: </span>
-                      <span className="font-mono text-slate-400">
-                        {currentParsedDoc.weights.tare_weight_kg.toLocaleString()} kg
-                      </span>
-                    </div>
-                  )}
-                  {currentParsedDoc.weights?.measurement_cbm && (
-                    <div>
-                      <span className="text-slate-500">Volume: </span>
-                      <span className="font-mono text-slate-300">
-                        {currentParsedDoc.weights.measurement_cbm} CBM
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Box 3: Containers & ISO 6346 Checksum */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Hash className="h-4 w-4 text-purple-400" />
-                  <span>Containers & Seal</span>
-                </div>
-                <div className="mt-2 space-y-2">
-                  {currentParsedDoc.containers?.length > 0 ? (
-                    currentParsedDoc.containers.map((c, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg border border-slate-800 bg-slate-900 p-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-cyan-300">
-                            {c.container_number}
-                          </span>
-                          <span className="rounded bg-slate-800 px-1 text-[10px] text-slate-400">
-                            {c.iso_type || "40HC"}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">Seal: {c.seal_number || "Verified"}</span>
-                          <span
-                            className={`flex items-center gap-0.5 text-[10px] font-medium ${
-                              c.is_valid_bic ? "text-emerald-400" : "text-rose-400"
-                            }`}
-                          >
-                            <CheckCircle2 className="h-3 w-3" />
-                            {c.is_valid_bic ? "BIC Valid" : "BIC Checksum Fail"}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-xs text-slate-500">No container listed (Breakbulk or Invoice)</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Box 4: Parties & HS Code */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Building className="h-4 w-4 text-amber-400" />
-                  <span>Importer & Tariff</span>
-                </div>
-                <div className="mt-2 space-y-1.5 text-xs">
-                  <div>
-                    <span className="text-slate-500">Consignee: </span>
-                    <span className="font-medium text-slate-200">
-                      {currentParsedDoc.consignee?.name || "N/A"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">IEC Code: </span>
-                    <span className="font-mono text-cyan-300">
-                      {currentParsedDoc.consignee?.iec_or_tax_id || "N/A"}
-                    </span>
-                  </div>
-                  {currentParsedDoc.hs_items?.length > 0 && (
-                    <div className="mt-2 border-t border-slate-800/80 pt-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                        Primary HS Code
-                      </div>
-                      <div className="font-mono font-bold text-amber-300">
-                        {currentParsedDoc.hs_items[0].hs_code}
-                      </div>
-                      <div className="line-clamp-2 text-[11px] text-slate-400">
-                        {currentParsedDoc.hs_items[0].description}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+          {source === "upload" ? (
+            <UploadPanel
+              uploads={uploads}
+              disabled={isLoading}
+              onChange={(slot, file) => {
+                setSelectedDocIndex(0);
+                onUploadChange(slot, file);
+              }}
+            />
           ) : (
-            <div className="relative rounded-xl border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-300">
-              <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap selection:bg-cyan-500 selection:text-black">
-                {currentRawDoc?.raw_text || "No raw text available."}
-              </pre>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {demoCases.map((c) => {
+                const active = c.id === activeCaseId;
+                return (
+                  <button
+                    key={c.id}
+                    disabled={isLoading}
+                    onClick={() => {
+                      setSelectedDocIndex(0);
+                      onSelectCase(c.id);
+                    }}
+                    className={`group rounded-md border p-3.5 text-left transition disabled:cursor-wait ${
+                      active
+                        ? "border-brand-500 bg-brand-50/60 ring-1 ring-brand-500"
+                        : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-zinc-900">
+                        {shortTitle(c.title)}
+                      </span>
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
+                          active
+                            ? "border-brand-600 bg-brand-600 text-white"
+                            : "border-zinc-300 bg-white"
+                        }`}
+                      >
+                        {active && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-zinc-500">{c.description}</p>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Action Trigger Banner */}
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-slate-900 p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/40">
-              <UploadCloud className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-cyan-300">
-                Ready for Cross-Document Verification
+        {documents.length > 0 && (
+          <>
+            {/* Document tabs */}
+            <div className="flex flex-col gap-3 border-b border-zinc-200 px-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="-mb-px flex gap-5 overflow-x-auto">
+                {documents.map((d, idx) => (
+                  <button
+                    key={`${d.doc_type}-${idx}`}
+                    onClick={() => setSelectedDocIndex(idx)}
+                    className={`whitespace-nowrap border-b-2 py-3 text-sm transition-colors ${
+                      docIndex === idx
+                        ? "border-brand-600 font-medium text-zinc-900"
+                        : "border-transparent text-zinc-500 hover:text-zinc-800"
+                    }`}
+                  >
+                    {DOC_LABELS[d.doc_type] ?? d.doc_type}
+                  </button>
+                ))}
               </div>
-              <div className="text-xs text-slate-400">
-                Execute automated 3-stage validation: BIC Checksum + Weight Variance + HS Tariff Audit + ICEGATE Filing.
+              <div className="flex items-center gap-2 pb-3 sm:pb-0">
+                {viewMode === "raw" && currentSource?.raw_text && (
+                  <button
+                    onClick={() => handleCopy(currentSource.raw_text!)}
+                    className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900"
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                )}
+                <Segmented
+                  value={viewMode}
+                  onChange={setViewMode}
+                  options={[
+                    { value: "structured", label: "Extracted" },
+                    { value: "raw", label: "Source" },
+                  ]}
+                />
               </div>
             </div>
-          </div>
 
-          <button
-            onClick={onRunPipeline}
-            disabled={isLoading}
-            className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-xs font-black uppercase tracking-wider text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <RotateCw className="h-4 w-4 animate-spin" />
-                <span>Auditing with Gemma 4...</span>
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4 fill-current" />
-                <span>Run End-to-End Pipeline</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+            <div className="p-5">
+              {viewMode === "structured" && doc ? (
+                <div className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-2">
+                  <Group title="Shipment">
+                    <Field label="Document no." value={doc.doc_number} mono />
+                    <Field label="Vessel" value={doc.vessel_name} />
+                    <Field label="Voyage" value={doc.voyage_number} mono />
+                    <Field label="Port of loading" value={doc.port_of_loading} />
+                    <Field label="Port of discharge" value={doc.port_of_discharge} />
+                    <Field label="Incoterm" value={doc.incoterm} />
+                  </Group>
+
+                  <Group title="Parties">
+                    <Field label="Consignee" value={doc.consignee?.name} />
+                    <Field label="IEC / tax ID" value={doc.consignee?.iec_or_tax_id} mono />
+                    <Field label="Shipper" value={doc.shipper?.name} />
+                  </Group>
+
+                  <Group title="Weights">
+                    <Field label="Gross" value={kg(doc.weights?.gross_weight_kg)} mono />
+                    <Field label="Net" value={kg(doc.weights?.net_weight_kg)} mono />
+                    <Field label="Tare" value={kg(doc.weights?.tare_weight_kg)} mono />
+                    <Field
+                      label="Volume"
+                      value={
+                        doc.weights?.measurement_cbm
+                          ? `${doc.weights.measurement_cbm} CBM`
+                          : undefined
+                      }
+                      mono
+                    />
+                  </Group>
+
+                  <Group title="Containers">
+                    {doc.containers?.length ? (
+                      doc.containers.map((c, i) => (
+                        <Field
+                          key={i}
+                          label={c.container_number}
+                          value={
+                            <span className="font-sans text-sm">
+                              {[c.iso_type, c.seal_number && `seal ${c.seal_number}`]
+                                .filter(Boolean)
+                                .join(" · ")}
+                              <span
+                                className={`ml-2 ${
+                                  c.is_valid_bic ? "text-zinc-500" : "font-medium text-red-700"
+                                }`}
+                              >
+                                {c.is_valid_bic ? "check digit ok" : "check digit invalid"}
+                              </span>
+                            </span>
+                          }
+                        />
+                      ))
+                    ) : (
+                      <p className="py-1.5 text-sm text-zinc-500">None listed on this document.</p>
+                    )}
+                  </Group>
+
+                  {doc.hs_items?.length > 0 && (
+                    <div className="md:col-span-2">
+                      <h4 className="mb-1 text-sm font-medium text-zinc-900">Line items</h4>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-zinc-200 text-left text-zinc-500">
+                            <th className="py-1.5 pr-4 font-normal">HS code</th>
+                            <th className="py-1.5 pr-4 font-normal">Description</th>
+                            <th className="py-1.5 text-right font-normal">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {doc.hs_items.map((h, i) => (
+                            <tr key={i}>
+                              <td className="py-1.5 pr-4 font-mono text-[13px]">{h.hs_code}</td>
+                              <td className="py-1.5 pr-4 text-zinc-700">{h.description}</td>
+                              <td className="py-1.5 text-right text-zinc-700">
+                                {h.quantity ? `${h.quantity.toLocaleString()} ${h.unit ?? ""}` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {viewMode === "structured" && (
+                    <p className="mb-4 rounded-md border border-dashed border-zinc-300 px-4 py-3 text-sm text-zinc-600">
+                      {isLoading
+                        ? progress ?? "Extracting fields with the local model…"
+                        : "Not extracted yet. Showing the source document. Click Run checks to extract fields."}
+                    </p>
+                  )}
+                  <SourceView doc={currentSource} />
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </Card>
+    </section>
   );
 }

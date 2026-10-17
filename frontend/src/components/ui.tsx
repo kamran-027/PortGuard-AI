@@ -61,6 +61,41 @@ export function Status({ tone, children }: { tone: Tone; children: React.ReactNo
   );
 }
 
+const pillLight: Record<Tone, string> = {
+  neutral: "bg-zinc-100 text-zinc-600",
+  good: "bg-emerald-50 text-emerald-700",
+  warn: "bg-amber-50 text-amber-700",
+  bad: "bg-red-50 text-red-700",
+};
+
+const pillDark: Record<Tone, string> = {
+  neutral: "bg-white/10 text-zinc-300 ring-white/15",
+  good: "bg-emerald-400/10 text-emerald-300 ring-emerald-400/25",
+  warn: "bg-amber-400/10 text-amber-300 ring-amber-400/25",
+  bad: "bg-red-400/10 text-red-300 ring-red-400/25",
+};
+
+export function Pill({
+  tone,
+  dark = false,
+  children,
+}: {
+  tone: Tone;
+  dark?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${
+        dark ? `ring-1 ${pillDark[tone]}` : pillLight[tone]
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
+      {children}
+    </span>
+  );
+}
+
 export function Field({
   label,
   value,
@@ -89,7 +124,7 @@ export function Button({
 }) {
   const styles =
     variant === "primary"
-      ? "bg-zinc-900 text-white hover:bg-zinc-800"
+      ? "bg-brand-600 text-white shadow-sm hover:bg-brand-700"
       : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50";
   return (
     <button
@@ -156,3 +191,6 @@ export const CHANNEL: Record<string, { label: string; tone: Tone }> = {
   YELLOW_CHANNEL_DOCUMENT_ASSESSMENT: { label: "Yellow channel", tone: "warn" },
   RED_CHANNEL_HOLD: { label: "Red channel", tone: "bad" },
 };
+
+/** Drops trailing qualifiers like "(Golden Path)" from demo case titles. */
+export const shortTitle = (t?: string) => (t ?? "").replace(/\s*\(.*\)\s*$/, "");

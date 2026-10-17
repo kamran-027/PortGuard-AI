@@ -2,30 +2,40 @@
 
 import React from "react";
 import { AuditResult, CertificateStatus } from "@/lib/types";
-import { Card, CHANNEL, Status, Tone, formatInr, formatUsd } from "./ui";
+import { CHANNEL, Pill, Tone, formatInr, formatUsd } from "./ui";
 
 interface DemurrageBannerProps {
   auditResult?: AuditResult | null;
   channelStatus?: CertificateStatus | null;
-  consignmentTitle?: string;
+  title?: string;
+  subtitle?: string | null;
 }
+
+const valueTone: Record<Tone, string> = {
+  neutral: "text-white",
+  good: "text-emerald-300",
+  warn: "text-amber-300",
+  bad: "text-red-300",
+};
 
 function Stat({
   label,
+  tone = "neutral",
   children,
   sub,
 }: {
   label: string;
+  tone?: Tone;
   children: React.ReactNode;
   sub?: React.ReactNode;
 }) {
   return (
-    <div className="bg-white px-5 py-4">
-      <div className="text-sm text-zinc-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">
+    <div className="lg:px-6 lg:first:pl-0">
+      <dt className="text-sm text-zinc-400">{label}</dt>
+      <dd className={`mt-1 text-2xl font-semibold tracking-tight tabular-nums ${valueTone[tone]}`}>
         {children}
-      </div>
-      {sub && <div className="mt-0.5 text-sm text-zinc-500">{sub}</div>}
+      </dd>
+      {sub && <dd className="mt-0.5 text-sm text-zinc-500">{sub}</dd>}
     </div>
   );
 }
@@ -33,19 +43,15 @@ function Stat({
 export default function DemurrageBanner({
   auditResult,
   channelStatus,
-  consignmentTitle,
+  title,
+  subtitle,
 }: DemurrageBannerProps) {
-  if (!auditResult) {
-    return (
-      <Card className="px-5 py-4 text-sm text-zinc-500">
-        No consignment loaded yet. Pick a sample case below to run the checks.
-      </Card>
-    );
-  }
-
-  const { demurrage_estimate: est, summary } = auditResult;
-  const isClean = summary.status === "CLEARED";
-  const statusTone: Tone = isClean
+  const summary = auditResult?.summary;
+  const est = auditResult?.demurrage_estimate;
+  const isClean = summary?.status === "CLEARED";
+  const statusTone: Tone = !summary
+    ? "neutral"
+    : isClean
     ? "good"
     : summary.critical_count > 0
     ? "bad"
@@ -53,42 +59,49 @@ export default function DemurrageBanner({
   const channel = channelStatus ? CHANNEL[channelStatus] : undefined;
 
   return (
-    <Card>
-      {consignmentTitle && (
-        <div className="border-b border-zinc-200 px-5 py-3 text-sm text-zinc-500">
-          {consignmentTitle}
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-b-lg bg-zinc-200 lg:grid-cols-4">
+    <div className="mx-auto max-w-6xl px-4 pb-8 pt-7 sm:px-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {title ?? "Loading consignment…"}
+        </h1>
+        {title && !summary && (
+          <Pill tone="neutral" dark>
+            Not checked
+          </Pill>
+        )}
+        {summary && (
+          <Pill tone={statusTone} dark>
+            {isClean
+              ? "Cleared"
+              : `${auditResult!.discrepancies.length} issue${
+                  auditResult!.discrepancies.length === 1 ? "" : "s"
+                }`}
+          </Pill>
+        )}
+      </div>
+      {subtitle && <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>}
+
+      <dl className="mt-7 grid grid-cols-2 gap-x-6 gap-y-6 lg:grid-cols-4 lg:gap-x-0 lg:divide-x lg:divide-white/10">
         <Stat
-          label="Audit result"
-          sub={`${summary.passed_checks} of ${summary.total_checks} checks passed`}
+          label="Checks passed"
+          tone={statusTone}
+          sub={summary && `${summary.critical_count} critical · ${summary.warning_count} warnings`}
         >
-          <Status tone={statusTone}>
-            <span className="text-xl font-semibold">
-              {isClean ? "Cleared" : `${auditResult.discrepancies.length} issues`}
-            </span>
-          </Status>
+          {summary ? `${summary.passed_checks}/${summary.total_checks}` : "—"}
         </Stat>
-        <Stat label="Expected routing">
-          {channel ? (
-            <Status tone={channel.tone}>
-              <span className="text-xl font-semibold">{channel.label}</span>
-            </Status>
-          ) : (
-            "—"
-          )}
+        <Stat label="Expected routing" tone={channel?.tone}>
+          {channel?.label ?? "—"}
         </Stat>
         <Stat label="Hold days avoided">
-          {isClean ? 0 : est.estimated_hold_days}
+          {est ? (isClean ? 0 : est.estimated_hold_days) : "—"}
         </Stat>
         <Stat
           label="Cost avoided"
-          sub={isClean ? undefined : formatUsd(est.total_averted_usd)}
+          sub={est && !isClean ? formatUsd(est.total_averted_usd) : undefined}
         >
-          {formatInr(isClean ? 0 : est.total_averted_inr)}
+          {est ? formatInr(isClean ? 0 : est.total_averted_inr) : "—"}
         </Stat>
-      </div>
-    </Card>
+      </dl>
+    </div>
   );
 }

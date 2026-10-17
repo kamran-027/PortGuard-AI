@@ -1,15 +1,18 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Navbar from "@/components/Navbar";
+import React, { useEffect, useRef, useState } from "react";
+import Navbar, { PORT_OPTIONS } from "@/components/Navbar";
 import DemurrageBanner from "@/components/DemurrageBanner";
-import Stage1Upload from "@/components/Stage1Upload";
+import Stage1Upload, { DocSource } from "@/components/Stage1Upload";
 import Stage2AuditConsole from "@/components/Stage2AuditConsole";
 import Stage3Certificate from "@/components/Stage3Certificate";
 import {
   checkHealth,
+  generateCertificate,
   getDemoCaseDetail,
   getDemoCases,
+  parseUploadedDocument,
+  runAudit,
   runPipelineCase,
 } from "@/lib/api";
 import {
@@ -18,294 +21,303 @@ import {
   DemoCaseSummary,
   IcegateCertificate,
   ParsedDocument,
+  SourceDoc,
   SystemHealth,
+  UPLOAD_SLOTS,
+  UploadEntry,
+  UploadSlot,
 } from "@/lib/types";
-import {
-  Layers,
-  FileText,
-  Scale,
-  Award,
-  Sparkles,
-  ArrowRight,
-  Shield,
-  CheckCircle2,
-  AlertTriangle,
-} from "lucide-react";
+import { CHANNEL, DOC_LABELS, Pill, shortTitle } from "@/components/ui";
+
+type Tab = "all" | "stage1" | "stage2" | "stage3";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "all", label: "Overview" },
+  { id: "stage1", label: "Documents" },
+  { id: "stage2", label: "Audit" },
+  { id: "stage3", label: "Certificate" },
+];
 
 export default function Home() {
   const [selectedPort, setSelectedPort] = useState("INNSA1");
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+  const [source, setSource] = useState<DocSource>("upload");
   const [demoCases, setDemoCases] = useState<DemoCaseSummary[]>([]);
   const [activeCaseId, setActiveCaseId] = useState("clean_consignment");
   const [demoDetail, setDemoDetail] = useState<DemoCaseDetail | null>(null);
+  const [uploads, setUploads] = useState<Partial<Record<UploadSlot, UploadEntry>>>({});
 
-  // Pipeline output states
   const [parsedDocuments, setParsedDocuments] = useState<ParsedDocument[]>([]);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [certificate, setCertificate] = useState<IcegateCertificate | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "stage1" | "stage2" | "stage3">(
-    "all"
-  );
+  const [isRunning, setIsRunning] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("all");
+  // Bumped whenever the inputs change so a late response for the
+  // previous selection is ignored.
+  const runToken = useRef(0);
 
-  // Initialize on mount
+  const clearResults = () => {
+    runToken.current++;
+    setIsRunning(false);
+    setProgress(null);
+    setError(null);
+    setParsedDocuments([]);
+    setAuditResult(null);
+    setCertificate(null);
+  };
+
+  // Load the sample cases and the default case's source documents.
+  // No extraction or model call happens until "Run checks" is clicked.
   useEffect(() => {
-    async function init() {
-      setIsLoading(true);
-      try {
-        const [health, cases] = await Promise.all([
-          checkHealth(),
-          getDemoCases(),
-        ]);
-        setSystemHealth(health);
+    checkHealth().then(setSystemHealth);
+    Promise.all([getDemoCases(), getDemoCaseDetail("clean_consignment")])
+      .then(([cases, detail]) => {
         setDemoCases(cases);
-
-        // Preload clean consignment
-        const detail = await getDemoCaseDetail("clean_consignment");
         setDemoDetail(detail);
-
-        // Run initial pipeline run for clean consignment
-        const pipelineRes = await runPipelineCase("clean_consignment", "INNSA1");
-        setParsedDocuments(pipelineRes.stage1_parsed_documents);
-        setAuditResult(pipelineRes.stage2_audit_result);
-        setCertificate(pipelineRes.stage3_certificate);
-      } catch (err) {
-        console.error("Initialization error:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    init();
+      })
+      .catch(console.error);
   }, []);
 
-  // Handle case switch
-  const handleSelectCase = async (caseId: string) => {
-    setActiveCaseId(caseId);
-    setIsLoading(true);
-    try {
-      const detail = await getDemoCaseDetail(caseId);
-      setDemoDetail(detail);
+  // Release PDF preview URLs when the page goes away.
+  const uploadsRef = useRef(uploads);
+  useEffect(() => {
+    uploadsRef.current = uploads;
+  }, [uploads]);
+  useEffect(
+    () => () => {
+      Object.values(uploadsRef.current).forEach((u) => u?.url && URL.revokeObjectURL(u.url));
+    },
+    []
+  );
 
-      const pipelineRes = await runPipelineCase(caseId, selectedPort);
-      setParsedDocuments(pipelineRes.stage1_parsed_documents);
-      setAuditResult(pipelineRes.stage2_audit_result);
-      setCertificate(pipelineRes.stage3_certificate);
+  const handleSourceChange = (next: DocSource) => {
+    if (next === source) return;
+    setSource(next);
+    clearResults();
+  };
+
+  const handleSelectCase = async (caseId: string) => {
+    if (caseId === activeCaseId) return;
+    setActiveCaseId(caseId);
+    clearResults();
+    setDemoDetail(null);
+    try {
+      setDemoDetail(await getDemoCaseDetail(caseId));
     } catch (err) {
-      console.error("Failed to run pipeline for case:", err);
-    } finally {
-      setIsLoading(false);
+      console.error(err);
     }
   };
 
-  // Handle port change
-  const handleSelectPort = async (port: string) => {
+  const handleUploadChange = async (slot: UploadSlot, file: File | null) => {
+    clearResults();
+    const previous = uploads[slot];
+    if (previous?.url) URL.revokeObjectURL(previous.url);
+
+    let entry: UploadEntry | undefined;
+    if (file) {
+      const isPdf = file.name.toLowerCase().endsWith(".pdf");
+      entry = isPdf
+        ? { file, url: URL.createObjectURL(file) }
+        : { file, text: await file.text() };
+    }
+    setUploads((prev) => {
+      const next = { ...prev };
+      if (entry) next[slot] = entry;
+      else delete next[slot];
+      return next;
+    });
+  };
+
+  const handleSelectPort = (port: string) => {
     setSelectedPort(port);
-    if (activeCaseId) {
-      setIsLoading(true);
-      try {
-        const pipelineRes = await runPipelineCase(activeCaseId, port);
-        setParsedDocuments(pipelineRes.stage1_parsed_documents);
-        setAuditResult(pipelineRes.stage2_audit_result);
-        setCertificate(pipelineRes.stage3_certificate);
-      } catch (err) {
-        console.error("Failed to update port pipeline:", err);
-      } finally {
-        setIsLoading(false);
+    clearResults();
+  };
+
+  const uploadedSlots = UPLOAD_SLOTS.filter((slot) => uploads[slot]);
+
+  const runUploaded = async (token: number) => {
+    const parsed: ParsedDocument[] = [];
+    for (const [i, slot] of uploadedSlots.entries()) {
+      setProgress(
+        `Extracting ${DOC_LABELS[slot]} (${i + 1} of ${uploadedSlots.length}) with the local model…`
+      );
+      parsed.push(await parseUploadedDocument(uploads[slot]!.file, slot));
+      if (token !== runToken.current) return;
+      setParsedDocuments([...parsed]);
+    }
+
+    setProgress("Cross-checking documents…");
+    const audit = await runAudit(parsed);
+    if (token !== runToken.current) return;
+    setAuditResult(audit);
+
+    setProgress("Generating certificate…");
+    const cert = await generateCertificate(audit, selectedPort);
+    if (token !== runToken.current) return;
+    setCertificate(cert);
+  };
+
+  const runSample = async (token: number) => {
+    setProgress("Running checks on the sample case…");
+    const res = await runPipelineCase(activeCaseId, selectedPort);
+    if (token !== runToken.current) return;
+    setParsedDocuments(res.stage1_parsed_documents);
+    setAuditResult(res.stage2_audit_result);
+    setCertificate(res.stage3_certificate);
+  };
+
+  const handleRunPipeline = async () => {
+    clearResults();
+    const token = runToken.current;
+    setIsRunning(true);
+    try {
+      await (source === "upload" ? runUploaded(token) : runSample(token));
+    } catch (err) {
+      if (token === runToken.current) {
+        setError(err instanceof Error ? err.message : "Something went wrong running the checks.");
+      }
+    } finally {
+      if (token === runToken.current) {
+        setIsRunning(false);
+        setProgress(null);
       }
     }
   };
 
-  // Explicit re-run of pipeline
-  const handleRunPipeline = async () => {
-    setIsLoading(true);
-    try {
-      const pipelineRes = await runPipelineCase(activeCaseId, selectedPort);
-      setParsedDocuments(pipelineRes.stage1_parsed_documents);
-      setAuditResult(pipelineRes.stage2_audit_result);
-      setCertificate(pipelineRes.stage3_certificate);
-    } catch (err) {
-      console.error("Failed to execute pipeline:", err);
-    } finally {
-      setIsLoading(false);
-    }
+  const documents: SourceDoc[] =
+    source === "upload"
+      ? uploadedSlots.map((slot) => ({
+          doc_type: slot,
+          name: uploads[slot]!.file.name,
+          raw_text: uploads[slot]!.text,
+          pdf_url: uploads[slot]!.url,
+        }))
+      : demoDetail?.documents ?? [];
+
+  const canRun = source === "upload" ? uploadedSlots.length > 0 : demoDetail !== null;
+
+  const portName = PORT_OPTIONS.find((p) => p.code === selectedPort)?.name;
+  const heroTitle =
+    source === "upload" ? "Your documents" : demoDetail ? shortTitle(demoDetail.title) : undefined;
+  const heroSubtitle =
+    source === "upload"
+      ? uploadedSlots.length
+        ? `${uploadedSlots.length} of 3 documents · ${selectedPort} · ${portName}`
+        : "Upload a Bill of Lading, Commercial Invoice and Packing List to start"
+      : demoDetail && `${demoDetail.cargo} · ${demoDetail.port}`;
+
+  const stage1 = (
+    <Stage1Upload
+      source={source}
+      onSourceChange={handleSourceChange}
+      demoCases={demoCases}
+      activeCaseId={activeCaseId}
+      onSelectCase={handleSelectCase}
+      uploads={uploads}
+      onUploadChange={handleUploadChange}
+      documents={documents}
+      parsedDocuments={parsedDocuments}
+      isLoading={isRunning}
+      progress={progress}
+      error={error}
+      canRun={canRun}
+      onRunPipeline={handleRunPipeline}
+    />
+  );
+  const stage2 = (
+    <Stage2AuditConsole
+      auditResult={auditResult}
+      onProceedToCertificate={() => setActiveTab("stage3")}
+    />
+  );
+  const stage3 = <Stage3Certificate certificate={certificate} />;
+
+  const issueCount = auditResult?.discrepancies.length ?? 0;
+  const channel = certificate ? CHANNEL[certificate.channel_status] : undefined;
+  const tabMeta: Partial<Record<Tab, React.ReactNode>> = {
+    stage1: parsedDocuments.length > 0 && (
+      <Pill tone="neutral">{parsedDocuments.length} docs</Pill>
+    ),
+    stage2: auditResult && (
+      <Pill tone={issueCount ? "bad" : "good"}>
+        {issueCount ? `${issueCount} issues` : "Pass"}
+      </Pill>
+    ),
+    stage3: channel && <Pill tone={channel.tone}>{channel.label.split(" ")[0]}</Pill>,
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Navigation */}
+    <div className="flex min-h-screen flex-col">
       <Navbar
         selectedPort={selectedPort}
         onSelectPort={handleSelectPort}
         systemHealth={systemHealth}
-      />
-
-      <main className="flex-1 mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-        {/* Hero Demurrage Metric Banner */}
+        isLoading={isRunning}
+      >
         <DemurrageBanner
           auditResult={auditResult}
           channelStatus={certificate?.channel_status}
-          consignmentTitle={demoDetail?.title}
-          onJumpToAudit={() => setActiveTab("stage2")}
+          title={heroTitle}
+          subtitle={heroSubtitle}
         />
+      </Navbar>
 
-        {/* Pipeline Stepper & Tab Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-3">
-          {/* Stepper Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-                activeTab === "all"
-                  ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
-                  : "bg-slate-900 text-slate-400 hover:bg-slate-850 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              <span>Complete Pipeline View</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("stage1")}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                activeTab === "stage1"
-                  ? "border border-cyan-500/40 bg-slate-900 text-cyan-300"
-                  : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              <FileText className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Stage 1: Documents</span>
-              <span className="rounded bg-slate-800 px-1.5 py-0.2 font-mono text-[10px]">
-                {parsedDocuments.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("stage2")}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                activeTab === "stage2"
-                  ? "border border-cyan-500/40 bg-slate-900 text-cyan-300"
-                  : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              <Scale className="h-3.5 w-3.5 text-amber-400" />
-              <span>Stage 2: Cross-Audit</span>
-              {auditResult && (
-                <span
-                  className={`rounded px-1.5 py-0.2 font-mono text-[10px] ${
-                    auditResult.summary.status === "CLEARED"
-                      ? "bg-emerald-950 text-emerald-400"
-                      : "bg-rose-950 text-rose-400"
-                  }`}
-                >
-                  {auditResult.summary.status === "CLEARED"
-                    ? "Pass"
-                    : `${auditResult.discrepancies.length} Alerts`}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("stage3")}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
-                activeTab === "stage3"
-                  ? "border border-cyan-500/40 bg-slate-900 text-cyan-300"
-                  : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              <Award className="h-3.5 w-3.5 text-purple-400" />
-              <span>Stage 3: Certificate</span>
-              {certificate && (
-                <span
-                  className={`rounded px-1.5 py-0.2 font-mono text-[10px] ${
-                    certificate.channel_status === "GREEN_CHANNEL_APPROVED"
-                      ? "bg-emerald-950 text-emerald-400"
-                      : "bg-rose-950 text-rose-400"
-                  }`}
-                >
-                  {certificate.channel_status === "GREEN_CHANNEL_APPROVED"
-                    ? "Green"
-                    : "Red"}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Status info */}
-          <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="font-mono text-slate-300">Port {selectedPort}</span>
-            </div>
-            <span>•</span>
-            <div className="text-[11px] text-slate-400">
-              Gemma 4 Zero-Leakage Pipeline
-            </div>
-          </div>
+      <nav className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur print:hidden">
+        <div className="mx-auto flex max-w-6xl gap-7 overflow-x-auto px-4 sm:px-6">
+          {TABS.map((t, i) => {
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 py-3.5 text-sm transition-colors ${
+                  active
+                    ? "border-brand-600 font-medium text-zinc-900"
+                    : "border-transparent text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                {i > 0 && (
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors ${
+                      active ? "bg-brand-600 text-white" : "bg-zinc-100 text-zinc-500"
+                    }`}
+                  >
+                    {i}
+                  </span>
+                )}
+                {t.label}
+                {tabMeta[t.id]}
+              </button>
+            );
+          })}
         </div>
+      </nav>
 
-        {/* View Mode Router */}
-        {activeTab === "all" && (
-          <div className="space-y-10">
-            <Stage1Upload
-              demoCases={demoCases}
-              activeCaseId={activeCaseId}
-              onSelectCase={handleSelectCase}
-              parsedDocuments={parsedDocuments}
-              demoDetail={demoDetail}
-              isLoading={isLoading}
-              onRunPipeline={handleRunPipeline}
-            />
-
-            <Stage2AuditConsole
-              auditResult={auditResult}
-              onProceedToCertificate={() => setActiveTab("stage3")}
-            />
-
-            <Stage3Certificate certificate={certificate} />
-          </div>
-        )}
-
-        {activeTab === "stage1" && (
-          <Stage1Upload
-            demoCases={demoCases}
-            activeCaseId={activeCaseId}
-            onSelectCase={handleSelectCase}
-            parsedDocuments={parsedDocuments}
-            demoDetail={demoDetail}
-            isLoading={isLoading}
-            onRunPipeline={handleRunPipeline}
-          />
-        )}
-
-        {activeTab === "stage2" && (
-          <Stage2AuditConsole
-            auditResult={auditResult}
-            onProceedToCertificate={() => setActiveTab("stage3")}
-          />
-        )}
-
-        {activeTab === "stage3" && (
-          <Stage3Certificate certificate={certificate} />
-        )}
+      <main
+        className={`mx-auto w-full max-w-6xl flex-1 px-4 py-8 transition-opacity sm:px-6 ${
+          isRunning ? "opacity-60" : ""
+        }`}
+      >
+        <div key={activeTab} className="animate-fade-in">
+          {activeTab === "all" && (
+            <div className="space-y-12">
+              {stage1}
+              {stage2}
+              {stage3}
+            </div>
+          )}
+          {activeTab === "stage1" && stage1}
+          {activeTab === "stage2" && stage2}
+          {activeTab === "stage3" && stage3}
+        </div>
       </main>
 
-      {/* Industrial Footer */}
-      <footer className="mt-16 border-t border-slate-900 bg-slate-950/80 py-8 text-xs text-slate-500">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-cyan-500" />
-            <span className="font-semibold text-slate-400">PortGuard AI</span>
-            <span>—</span>
-            <span>Built by Cadence Labs for High-Throughput Maritime Logistics</span>
-          </div>
-
-          <div className="flex items-center gap-4 text-slate-500">
-            <span>ICEGATE 2.0 / EDI-FACT</span>
-            <span>•</span>
-            <span>Customs Act 1962 Sec 111(m) Shield</span>
-            <span>•</span>
-            <span>Local Gemma 4 (12B)</span>
-          </div>
+      <footer className="border-t border-zinc-200 py-6 text-sm text-zinc-400 print:hidden">
+        <div className="mx-auto flex max-w-6xl justify-between px-4 sm:px-6">
+          <span>PortGuard</span>
+          <span>Documents never leave this machine</span>
         </div>
       </footer>
     </div>
