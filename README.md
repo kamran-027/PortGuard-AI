@@ -1,146 +1,162 @@
-# PortGuard AI 🚢
-> **Autonomous Customs Pre-Clearance & Demurrage Aversion Engine**  
-> Powered by local Ollama (`gemma4:12b` / `gemma2:9b`), FastAPI, and Next.js 15.
+# PortGuard
+
+Customs pre-clearance checks for shipping documents, run on a local model.
+
+PortGuard cross-checks a **Bill of Lading**, **Commercial Invoice** and **Packing List** before they are filed on ICEGATE (the Indian Customs EDI Gateway). Mismatches between these documents are a common cause of customs holds, and every day a container sits at the port adds demurrage charges of roughly $150–500 (₹12,000–40,000). PortGuard flags the mismatches up front, estimates the cost they would have caused, and produces a pre-clearance report.
+
+Everything runs locally: FastAPI, Next.js and Ollama with `gemma4:12b`. No documents are sent to a cloud service.
 
 ---
 
-## 📌 Overview
-
-Global shipping and freight forwarding face severe financial bleeding due to documentation errors at port customs. Discrepancies between **Bills of Lading (B/L)**, **Commercial Invoices (CI)**, and **Packing Lists (PL)** frequently cause customs holds under regulatory portals like **ICEGATE** (Indian Customs EDI Gateway).
-
-These delays lead to **punitive container demurrage and detention charges** (averaging \$150–\$500 / ₹12,000–₹40,000 per day per container), port dwell-time spikes, and compliance penalties.
-
-**PortGuard AI** is a locally deployed, privacy-compliant automated pre-clearance engine. It performs cross-document consistency audits, validates container numbers and HS codes, highlights discrepancies before filing, and produces an **ICEGATE-ready Pre-Clearance Certificate** complete with an estimated calculation of averted demurrage penalties.
-
----
-
-## 🏛️ Architecture
+## How it works
 
 ```
-                      ┌───────────────────────────────────────────┐
-                      │            PortGuard Dashboard            │
-                      │     (Next.js 15 + Tailwind + Lucide)      │
-                      └─────────────────────┬─────────────────────┘
-                                            │ Uploads Docs / 1-Click Demo
-                                            ▼
-                      ┌───────────────────────────────────────────┐
-                      │              FastAPI Backend              │
-                      │           (localhost:8000/api)            │
-                      └─────────────────────┬─────────────────────┘
-                                            │ Strictly Local API Calls
-                                            ▼
-                      ┌───────────────────────────────────────────┐
-                      │            Local Ollama Engine            │
-                      │               `gemma4:12b`                │
-                      │      (or `gemma4:e4b` / `gemma2:9b`)      │
-                      └─────────────────────┬─────────────────────┘
-                                            │
-        ┌───────────────────────────────────┼───────────────────────────────────┐
-        ▼                                   ▼                                   ▼
- [ Stage 1: Document Parsing ]     [ Stage 2: Audit Engine ]      [ Stage 3: Clearance Cert ]
- Strict JSON extraction of:        Cross-document verification:    Generates formal ICEGATE
- • Container numbers (BIC/ISO)     • Weight discrepancy check      pre-clearance certificate
- • Harmonized (HS) tariff codes    • HS Code classification        with estimated demurrage 
- • Gross / Net Weights             • Consignee / Incoterm match    penalties averted ($/₹).
+                 ┌──────────────────────────────────────┐
+                 │   Dashboard (Next.js 16 + Tailwind)  │
+                 └──────────────────┬───────────────────┘
+                                    │  upload or pick a sample case,
+                                    │  then "Run checks"
+                                    ▼
+                 ┌──────────────────────────────────────┐
+                 │   FastAPI backend (localhost:8000)   │
+                 └──────────────────┬───────────────────┘
+                                    │  local calls only
+                                    ▼
+                 ┌──────────────────────────────────────┐
+                 │   Ollama (gemma4:12b)                │
+                 └──────────────────────────────────────┘
+
+ 1. Extract                  2. Audit                     3. Certificate
+ Containers, HS codes,       Cross-document checks,       Expected clearance channel,
+ weights, parties,           estimated demurrage          summary and SHA-256 hash
+ Incoterms                   and fines                    of the result
 ```
 
----
+**1. Extract.** Each document is turned into structured fields: container numbers, HS tariff codes, gross/net/tare weights, consignee and shipper, Incoterm, ports and vessel.
+- Uploaded documents are extracted by Gemma, with a rule-based parser as fallback.
+- Sample cases use the rule-based parser only (`fast_mode`), so a demo run takes about 30 seconds.
 
-## ⚡ Key Features
+**2. Audit.** Five cross-document checks:
+- Gross weight on the B/L vs the Packing List
+- HS code on the B/L vs the Commercial Invoice
+- Consignee name
+- Incoterm
+- Container number check digit (ISO 6346)
 
-* **100% Local & Air-Gapped Privacy**: Runs inference locally via Ollama with Gemma models (`gemma4:12b`, `gemma2:9b`, or `gemma4:e4b`). Zero third-party cloud leakage of sensitive trade manifests, commercial pricing, or client bills.
-* **Stage 1: Multi-Document Structured Parsing**:
-  * Extracts ISO 6346 / BIC container numbers, 6- to 8-digit HS (Harmonized System) tariff codes, tare/gross/net weights, consignee/shipper entities, and Incoterms (FOB, CIF, DDP, etc.).
-  * Enforces strict Pydantic JSON schemas.
-* **Stage 2: Cross-Document Audit Engine**:
-  * **Weight Discrepancy Checks**: Compares Gross vs. Net declarations between B/L and Packing List, flagging variance over tolerance (>1%).
-  * **HS Code Harmonization**: Flags classification conflicts between Commercial Invoices and customs declaration standards.
-  * **Entity & Incoterm Matching**: Verifies consignee name/address and freight terms alignment.
-* **Stage 3: ICEGATE Pre-Clearance Certificate & Demurrage Meter**:
-  * Issues a standardized customs pre-clearance report with a digital verification hash.
-  * Dynamic penalty averted calculator showing estimated demurrage risk savings in **USD (\$)** and **INR (₹)** based on port dwell-time risk.
-* **1-Click Interactive Demos**:
-  * **Golden Path**: Flawless consignment with 100% cross-document match and immediate clearance cert generation.
-  * **High-Risk Demurrage Consignment**: Pre-loaded discrepancy scenario (e.g., weight mismatch + misclassified HS code) exposing potential \$2,500+ / ₹2,00,000+ demurrage risk prevented before customs submission.
+Each issue includes the expected vs found value, the regulation it relates to, a suggested fix and an estimated penalty. Gemma then writes a short assessment of the result.
+
+**3. Certificate.** A pre-clearance report showing the expected ICEGATE channel (green, yellow or red), the risk level, the key shipment details and a SHA-256 hash of the result. It can be exported as JSON or printed on its own as a one-page PDF.
 
 ---
 
-## 🛠️ Tech Stack
+## Using the dashboard
 
-| Layer | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Frontend** | Next.js 15 (App Router), React 19, Tailwind CSS, Lucide Icons | Reactive, modern industrial customs dashboard |
-| **Runtime & Package Manager** | Bun / Node.js | Fast client builds and tooling |
-| **Backend API** | FastAPI, Python 3.11+, Uvicorn, Pydantic v2 | High-performance asynchronous REST endpoints & strict validation |
-| **Local LLM Engine** | Ollama (`gemma4:12b` / `gemma2:9b` / `gemma4:e4b`) | Local inference engine for document parsing and audit reasoning |
-| **Document Processing** | PyPDF / pdfplumber / regex parsing | Text extraction from shipping PDFs and structured documents |
+- **Your documents:** upload a Bill of Lading, Commercial Invoice and Packing List (text-based PDF or `.txt`, up to 10 MB each). One document is enough to run, but all three are needed for the full cross-check.
+- **Sample case:** two built-in cases.
+  - *Clean Consignment*: every document matches, so the result is the green channel.
+  - *Severe Demurrage Risk*: a 1,450 kg weight variance, conflicting HS codes, a consignee mismatch and an Incoterm clash, so the result is the red channel.
+- **Customs station:** the port selector in the header (Nhava Sheva, Mundra, Chennai, Kolkata).
 
----
-
-## 🚀 Quickstart Guide
-
-### Prerequisites
-1. **Ollama**: Install [Ollama](https://ollama.com/) and pull the desired Gemma model:
-   ```bash
-   ollama pull gemma2:9b
-   # or
-   ollama pull gemma:7b
-   ```
-2. **Python 3.11+**
-3. **Bun** (or Node 18+)
+Nothing is extracted and no model is called until you click **Run checks**. Changing the documents, case or port clears the previous results.
 
 ---
 
-### 1. Backend Setup
+## Quick start
+
+**Prerequisites**
+- [Ollama](https://ollama.com/) with the model pulled: `ollama pull gemma4:12b`
+- Python 3.11+
+- Bun (or Node 18+)
+
+**One-time setup**
 
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+
+cd ../frontend
+bun install
 ```
-Backend will be live at `http://localhost:8000`. API docs available at `http://localhost:8000/docs`.
 
----
-
-### 2. Frontend Setup
+**Run**
 
 ```bash
-cd frontend
-bun install
-bun run dev
+ollama serve      # in a separate terminal, if Ollama isn't already running
+./run.sh          # starts the backend and frontend
 ```
-Dashboard will be live at `http://localhost:3000`.
+
+| Service | URL |
+| :--- | :--- |
+| Dashboard | http://localhost:3000 |
+| API docs | http://localhost:8000/docs |
+
+To use a different model, set `OLLAMA_MODEL` in `backend/.env`.
 
 ---
 
-## 📁 Repository Structure
+## API
+
+| Method | Endpoint | Purpose |
+| :--- | :--- | :--- |
+| GET | `/api/health` | Backend and Ollama status |
+| GET | `/api/demo/cases`, `/api/demo/cases/{id}` | Sample cases and their source text |
+| POST | `/api/stage1/parse` | Extract fields from plain text |
+| POST | `/api/stage1/upload-pdf` | Extract fields from a PDF |
+| POST | `/api/stage2/audit` | Cross-check parsed documents |
+| POST | `/api/stage3/certificate` | Generate the pre-clearance report |
+| POST | `/api/pipeline/run-case/{id}` | Run all three stages on a sample case |
+
+---
+
+## Limitations
+
+This is a hackathon MVP. Known gaps:
+
+- **Fallback values.** When the rule-based parser can't find a field, it fills in fixed sample values (for example, vessel "MSC CLARA", port of loading Shanghai). Some extracted fields, and the certificate, can show details that aren't in the uploaded document.
+- **Model speed.** Gemma extraction takes about 90 seconds per document on a laptop and may hit the backend's 90-second model timeout. In that case it falls back to the rule-based parser.
+- **Scanned PDFs** aren't supported (no OCR yet).
+- **Not an official document.** The certificate is a pre-check report, not an ICEGATE filing or customs approval.
+- **Estimates.** Penalty and demurrage figures use fixed rates from `backend/app/core/config.py`, not live tariff or port data.
+- **Sample-mode fallback.** If the backend is unreachable, sample cases show pre-built results. Uploads show an error instead.
+
+---
+
+## Repository structure
 
 ```
 portguard-ai/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI entrypoint & router mounts
-│   │   ├── api/                 # Endpoints (/parse, /audit, /certificate, /demo)
-│   │   ├── core/                # Configuration & Ollama local client
-│   │   ├── models/              # Pydantic schemas (Document, AuditResult, Certificate)
-│   │   └── services/            # Parsing, cross-auditing, and demurrage calculations
+│   │   ├── main.py            # FastAPI app and CORS
+│   │   ├── api/routes.py      # All endpoints
+│   │   ├── core/              # Settings and Ollama client
+│   │   ├── models/            # Pydantic schemas (documents, audit, certificate)
+│   │   └── services/          # Parser, audit, certificate, container check digit, demo cases
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── app/                 # Next.js 15 App router (Dashboard, Certificate View)
-│   │   ├── components/          # UploadZone, AuditConsole, CertificateModal, DemurrageMeter
-│   │   └── lib/                 # API client, types, mock demo datasets
-│   ├── package.json
-│   └── tailwind.config.ts
-├── data/
-│   └── demo/                    # Pre-packaged sample shipping document sets
-└── README.md
+│   └── src/
+│       ├── app/               # Page, layout, global styles and theme
+│       ├── components/        # Header, summary, upload panel, the three stage panels, UI primitives
+│       └── lib/               # API client and types
+├── data/demo/                 # Sample document sets (.txt)
+└── run.sh                     # Starts backend and frontend
 ```
 
 ---
 
-## 📜 License
+## Tech stack
 
-MIT License. Built for the Hackathon.
+| Layer | Technology |
+| :--- | :--- |
+| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4, Lucide icons |
+| Backend | FastAPI, Python 3.11+, Pydantic v2, Uvicorn |
+| Model | Ollama, `gemma4:12b` |
+| PDF text | pypdf |
+
+---
+
+## License
+
+MIT. Built for a hackathon.
