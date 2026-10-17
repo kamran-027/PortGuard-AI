@@ -52,8 +52,27 @@ body {
   }
 }
 
+/* Printing outputs only the certificate (see Stage3Certificate). */
+.print-root {
+  display: none;
+}
+
+@page {
+  margin: 14mm;
+}
+
 @media print {
   body {
     background: #fff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body > *:not(.print-root) {
+    display: none !important;
+  }
+
+  .print-root {
+    display: block;
   }
 }
