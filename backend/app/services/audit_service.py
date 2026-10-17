@@ -1,6 +1,10 @@
 import datetime
 import uuid
+import re
+import logging
 from typing import List, Tuple
+import httpx
+
 from app.models.documents import ParsedDocument, DocumentType
 from app.models.audit import (
     AuditResult,
@@ -12,6 +16,9 @@ from app.models.audit import (
     DemurrageEstimate,
 )
 from app.core.config import settings
+from app.core.ollama_client import ollama_client
+
+logger = logging.getLogger("portguard.audit")
 
 
 class AuditService:
@@ -224,13 +231,71 @@ class AuditService:
             match_percentage=match_pct
         )
 
+        default_assessment = (
+            "Consignment documentation exhibits 100% harmonization across B/L, Commercial Invoice, and Packing List. "
+            "Qualified for ICEGATE Green Channel expedited direct release with ₹0 customs hold penalty."
+        ) if status == AuditStatus.CLEARED else (
+            f"Consignment flagged with {len(discrepancies)} documentation conflict(s). "
+            f"Pre-clearance intervention successfully prevents an estimated ₹{total_averted_inr:,.2f} "
+            f"in container demurrage and Customs Act 1962 Sec 111(m) misdeclaration penalties."
+        )
+
         return AuditResult(
             consignment_id=cid,
             audit_timestamp=timestamp,
             summary=summary,
             discrepancies=discrepancies,
             demurrage_estimate=demurrage_estimate,
-            analyzed_documents=documents
+            analyzed_documents=documents,
+            ai_compliance_assessment=default_assessment
+        )
+
+    async def generate_ai_assessment(
+        self,
+        consignment_id: str,
+        summary: AuditSummary,
+        discrepancies: List[Discrepancy],
+        total_averted_inr: float
+    ) -> str:
+        """Generates dynamic customs auditor memorandum using local Gemma 4."""
+        if not await ollama_client.is_available():
+            return (
+                "Consignment documentation exhibits 100% harmonization. Qualified for ICEGATE Green Channel direct clearance."
+                if summary.status == AuditStatus.CLEARED else
+                f"Consignment flagged with {len(discrepancies)} discrepancy(ies). Early remediation averts ₹{total_averted_inr:,.2f} in demurrage."
+            )
+        
+        disc_summary = "\n".join([f"- {d.severity.value}: {d.title} ({d.description})" for d in discrepancies]) if discrepancies else "None (100% Match)"
+        prompt = (
+            f"You are a Senior Customs Inspector and ICEGATE EDI auditor. Review this consignment audit:\n"
+            f"Consignment ID: {consignment_id}\n"
+            f"Status: {summary.status.value}\n"
+            f"Discrepancies Detected:\n{disc_summary}\n"
+            f"Estimated Loss Averted: ₹{total_averted_inr:,.2f}\n\n"
+            f"Write a concise, 2-to-3 sentence official customs briefing. State the risk level, the ICEGATE clearance channel (Green Channel vs Red Channel), and the required action."
+        )
+        try:
+            payload = {
+                "model": settings.OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.2, "top_p": 0.9}
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                res = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=payload)
+                if res.status_code == 200:
+                    text = res.json().get("response", "").strip()
+                    # Strip any internal thinking tags
+                    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+                    if text:
+                        return text
+        except Exception:
+            pass
+
+        return (
+            "Consignment documentation exhibits 100% harmonization. Qualified for ICEGATE Green Channel direct clearance."
+            if summary.status == AuditStatus.CLEARED else
+            f"Consignment flagged with {len(discrepancies)} discrepancy(ies). Early remediation averts ₹{total_averted_inr:,.2f} in demurrage."
         )
 
 

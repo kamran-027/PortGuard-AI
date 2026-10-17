@@ -201,12 +201,18 @@ def _regex_fallback_extract(text: str, doc_type_hint: Optional[DocumentType] = N
 
 
 class ParserService:
-    async def parse_document(self, text: str, doc_type_hint: Optional[DocumentType] = None, filename: str = "document.txt") -> ParsedDocument:
+    async def parse_document(
+        self,
+        text: str,
+        doc_type_hint: Optional[DocumentType] = None,
+        filename: str = "document.txt",
+        use_llm: bool = True
+    ) -> ParsedDocument:
         """
         Parses document text using local Ollama model if available, falling back to deterministic regex parser.
         """
         data = None
-        if await ollama_client.is_available():
+        if use_llm and await ollama_client.is_available():
             prompt = f"Document Filename: {filename}\n\nDocument Text:\n{text[:6000]}"
             data = await ollama_client.generate_json(prompt=prompt, system_prompt=EXTRACTION_SYSTEM_PROMPT)
         
@@ -237,12 +243,24 @@ class ParserService:
                 total_value_usd=float(item.get("total_value_usd") or 0.0) if item.get("total_value_usd") else None
             ))
 
-        weights_data = data.get("weights", {})
+        weights_data = data.get("weights") or {}
+        gw_raw = weights_data.get("gross_weight_kg")
+        gross_weight = float(gw_raw) if gw_raw is not None else 24500.0
+
+        nw_raw = weights_data.get("net_weight_kg")
+        net_weight = float(nw_raw) if nw_raw is not None else None
+
+        tw_raw = weights_data.get("tare_weight_kg")
+        tare_weight = float(tw_raw) if tw_raw is not None else None
+
+        cbm_raw = weights_data.get("measurement_cbm")
+        cbm = float(cbm_raw) if cbm_raw is not None else None
+
         weight_info = WeightInfo(
-            gross_weight_kg=float(weights_data.get("gross_weight_kg", 20000.0)),
-            net_weight_kg=float(weights_data.get("net_weight_kg")) if weights_data.get("net_weight_kg") else None,
-            tare_weight_kg=float(weights_data.get("tare_weight_kg")) if weights_data.get("tare_weight_kg") else None,
-            measurement_cbm=float(weights_data.get("measurement_cbm")) if weights_data.get("measurement_cbm") else None
+            gross_weight_kg=gross_weight,
+            net_weight_kg=net_weight,
+            tare_weight_kg=tare_weight,
+            measurement_cbm=cbm
         )
 
         shipper_data = data.get("shipper")

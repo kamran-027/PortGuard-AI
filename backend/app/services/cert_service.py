@@ -21,7 +21,7 @@ class CertificateService:
         issue_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
         valid_until_str = (now + datetime.timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S UTC")
         
-        station_code = customs_station.upper() if customs_station else "INNSA1"
+        station_code = str(customs_station).upper() if (customs_station and hasattr(customs_station, "upper")) else "INNSA1"
         station_name = CUSTOMS_PORT_DIRECTORY.get(station_code, f"Indian Customs Station {station_code}")
 
         # Extract primary data from analyzed docs
