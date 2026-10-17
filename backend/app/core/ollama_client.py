@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional, Dict, Any
 import httpx
 from app.core.config import settings
@@ -65,12 +66,29 @@ class OllamaClient:
             payload["system"] = system_prompt
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(f"{self.base_url}/api/generate", json=payload)
                 if response.status_code == 200:
                     result = response.json()
-                    response_text = result.get("response", "{}")
-                    return json.loads(response_text)
+                    response_text = result.get("response", "{}").strip()
+                    
+                    # Clean markdown codeblocks if present
+                    if response_text.startswith("```json"):
+                        response_text = response_text[7:]
+                    elif response_text.startswith("```"):
+                        response_text = response_text[3:]
+                    if response_text.endswith("```"):
+                        response_text = response_text[:-3]
+                    response_text = response_text.strip()
+
+                    try:
+                        return json.loads(response_text)
+                    except json.JSONDecodeError:
+                        # Extract first valid json object with regex
+                        match = re.search(r"(\{.*\})", response_text, re.DOTALL)
+                        if match:
+                            return json.loads(match.group(1))
+                        raise
                 else:
                     logger.error(f"Ollama returned HTTP {response.status_code}: {response.text}")
         except Exception as e:

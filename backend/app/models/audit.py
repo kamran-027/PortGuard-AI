@@ -69,6 +69,7 @@ class AuditResult(BaseModel):
     discrepancies: List[Discrepancy] = Field(default_factory=list, description="List of detected errors")
     demurrage_estimate: DemurrageEstimate = Field(..., description="Averted financial loss projection")
     analyzed_documents: List[ParsedDocument] = Field(..., description="Underlying parsed documents")
+    ai_compliance_assessment: Optional[str] = Field(default=None, description="Gemma 4 generated customs officer compliance briefing")
 
 
 class AuditRequest(BaseModel):

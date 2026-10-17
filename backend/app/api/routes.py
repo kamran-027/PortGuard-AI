@@ -101,7 +101,14 @@ async def run_audit(request: AuditRequest):
     """
     if not request.documents:
         raise HTTPException(status_code=400, detail="At least one parsed document is required for auditing.")
-    return audit_service.perform_cross_audit(request.documents, consignment_id=request.consignment_id)
+    audit_result = audit_service.perform_cross_audit(request.documents, consignment_id=request.consignment_id)
+    audit_result.ai_compliance_assessment = await audit_service.generate_ai_assessment(
+        consignment_id=audit_result.consignment_id,
+        summary=audit_result.summary,
+        discrepancies=audit_result.discrepancies,
+        total_averted_inr=audit_result.demurrage_estimate.total_averted_inr
+    )
+    return audit_result
 
 
 # -------------------------------------------------------------
@@ -122,7 +129,7 @@ async def generate_certificate(request: CertificateGenerateRequest):
 # End-to-End 1-Click Pipeline Endpoint
 # -------------------------------------------------------------
 @router.post("/pipeline/run-case/{case_id}", tags=["Pipeline 1-Click Execution"])
-async def run_pipeline_for_case(case_id: str, customs_station: Optional[str] = Query("INNSA1")):
+async def run_pipeline_for_case(case_id: str, customs_station: str = "INNSA1"):
     """
     Executes the entire 3-stage pipeline in a single call for a demo case:
     1. Parse all shipping documents in the case
@@ -146,6 +153,12 @@ async def run_pipeline_for_case(case_id: str, customs_station: Optional[str] = Q
     audit_result = audit_service.perform_cross_audit(
         documents=parsed_docs,
         consignment_id=f"CASE-{case_id.upper()}"
+    )
+    audit_result.ai_compliance_assessment = await audit_service.generate_ai_assessment(
+        consignment_id=audit_result.consignment_id,
+        summary=audit_result.summary,
+        discrepancies=audit_result.discrepancies,
+        total_averted_inr=audit_result.demurrage_estimate.total_averted_inr
     )
 
     certificate = cert_service.generate_certificate(
