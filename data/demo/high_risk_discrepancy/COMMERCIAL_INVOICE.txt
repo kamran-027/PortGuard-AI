@@ -1,0 +1,23 @@
+================================================================================
+                       COMMERCIAL INVOICE
+================================================================================
+INVOICE NO: INV-EXP-8812                         DATE: 2026-10-13
+B/L REF: MAEU-2026-NSA44109                      CURRENCY: USD
+
+SELLER:
+Hanwha Precision Machining Co Ltd
+Gimhae Industrial Complex, South Korea
+
+BUYER / CONSIGNEE:
+Bharat Precision Automations LLP
+Sanand, Gujarat, India
+IEC CODE: 0811099234
+
+ITEM 1:
+- HS CODE: 8409.91.00
+- DESCRIPTION: Precision machined powertrain housing
+- QTY: 1,200 UNITS
+- TOTAL VALUE: $148,000.00 USD
+
+TERMS OF DELIVERY: FOB BUSAN
+================================================================================

@@ -1,0 +1,30 @@
+================================================================================
+                        MAERSK LINE A/S
+                         OCEAN BILL OF LADING
+================================================================================
+B/L NUMBER: MAEU-2026-NSA44109                    DATE: 2026-10-14
+VESSEL / VOYAGE: MAERSK MC-KINNEY / 991W          FLAG: DENMARK
+PORT OF LOADING: BUSAN, SOUTH KOREA (KRPUS)
+PORT OF DISCHARGE: MUNDRA PORT, INDIA (INMUN1)
+
+SHIPPER:
+Hanwha Precision Machining Co Ltd
+Gimhae Industrial Complex, South Korea
+
+CONSIGNEE:
+Bharat Precision Engineering Ltd
+Survey 118, Sanand Industrial Area, Ahmedabad, Gujarat 382110, India
+IEC CODE: 0811099234
+
+CONTAINER NO: MSCU6142987 (40HC)
+SEAL NO: ML-KOR-550192
+
+DESCRIPTION:
+Automotive Body Parts & Sub-assemblies
+HS CODE: 8708.29.00
+FREIGHT TERMS: CIF MUNDRA
+
+GROSS WEIGHT: 28,250.00 KG
+NET WEIGHT:   25,600.00 KG
+MEASUREMENT:  59.00 CBM
+================================================================================

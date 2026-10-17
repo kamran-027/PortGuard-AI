@@ -1,0 +1,25 @@
+================================================================================
+                       COMMERCIAL INVOICE
+================================================================================
+INVOICE NO: INV-2026-SH0918                      INVOICE DATE: 2026-10-11
+REF B/L: MSCU-2026-BOM89421                      CURRENCY: USD
+
+SELLER / EXPORTER:
+Sino-Pacific High-Tech Hardware Corp Ltd
+Building 4, Pudong Free Trade Zone, Shanghai, China
+
+BUYER / CONSIGNEE:
+Apex Logistics India Pvt Ltd
+Plot 42, MIDC Industrial Area, Taloja, Navi Mumbai 410208, India
+IEC: 0309012481
+
+ITEM 1:
+- HS CODE: 8471.30.10
+- DESCRIPTION: High-Performance Portable Laptop Computers
+- QUANTITY: 500 UNITS
+- UNIT PRICE: $750.00 USD
+- TOTAL VALUE: $375,000.00 USD
+
+TERMS OF DELIVERY: FOB SHANGHAI
+PAYMENT TERMS: IRREVOCABLE L/C AT SIGHT
+================================================================================

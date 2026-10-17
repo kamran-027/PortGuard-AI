@@ -1,0 +1,18 @@
+================================================================================
+                         EXPORT PACKING LIST
+================================================================================
+PACKING LIST NO: PL-EXP-8812                     DATE: 2026-10-13
+B/L REF: MAEU-2026-NSA44109
+
+CONTAINER NO: MSCU6142987 (40HC)
+SEAL NO: ML-KOR-550192
+
+CARGO BREAKDOWN:
+- 1,200 Precision Powertrain Castings in 48 Steel Crates
+- GROSS WEIGHT: 26,800.00 KG
+- NET WEIGHT:   24,200.00 KG
+- TARE WEIGHT:   3,850.00 KG
+- VOLUME:        59.00 CBM
+
+CONSIGNEE: Bharat Precision Engineering Ltd
+================================================================================

@@ -1,0 +1,29 @@
+================================================================================
+                    MEDITERRANEAN SHIPPING COMPANY S.A.
+                         OCEAN BILL OF LADING
+================================================================================
+B/L NUMBER: MSCU-2026-BOM89421                    DATE OF ISSUE: 2026-10-12
+VESSEL / VOYAGE: MSC CLARA / 2609E                FLAG: PANAMA
+PORT OF LOADING: SHANGHAI, CHINA (CNSHA)
+PORT OF DISCHARGE: NHAVA SHEVA, INDIA (INNSA1)
+
+SHIPPER:
+Sino-Pacific High-Tech Hardware Corp Ltd
+Building 4, Pudong Free Trade Zone, Shanghai, China
+
+CONSIGNEE:
+Apex Logistics India Pvt Ltd
+Plot 42, MIDC Industrial Area, Taloja, Navi Mumbai 410208, India
+IEC CODE: 0309012481 | GSTIN: 270309012481Z5
+
+CONTAINER NO: MSCU6142987 (40HC)      SEAL NO: MSC-IND-991204
+PACKAGE COUNT: 500 CARTONS
+DESCRIPTION OF GOODS:
+Portable automatic data processing machines (Laptops)
+HS TARIFF CODE: 8471.30.10
+INCOTERM: FOB SHANGHAI
+
+GROSS WEIGHT: 24,500.00 KG
+NET WEIGHT:   22,100.00 KG
+MEASUREMENT:  68.50 CBM
+================================================================================

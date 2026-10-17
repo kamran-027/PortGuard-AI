@@ -1,0 +1,19 @@
+================================================================================
+                         EXPORT PACKING LIST
+================================================================================
+PACKING LIST NO: PL-2026-SH0918                  DATE: 2026-10-11
+INVOICE REF: INV-2026-SH0918                     VESSEL: MSC CLARA
+
+CONTAINER NO: MSCU6142987 (40HC)
+SEAL NO: MSC-IND-991204
+
+PACKAGING BREAKDOWN:
+- PALLETS 1-25: 500 Master Cartons of 8471.30.10 Laptops
+- TOTAL GROSS WEIGHT: 24,500.00 KG
+- TOTAL NET WEIGHT:   22,100.00 KG
+- CONTAINER TARE:     3,820.00 KG
+- TOTAL VOLUME:       68.50 CBM
+
+CONSIGNEE: Apex Logistics India Pvt Ltd
+IEC: 0309012481
+================================================================================
