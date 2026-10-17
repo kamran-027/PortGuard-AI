@@ -182,7 +182,7 @@ export default function Stage3Certificate({ certificate }: Stage3CertificateProp
 
       {/* Print-only copy, attached to <body> so printing can hide the rest of the page. */}
       {typeof document !== "undefined" &&
-        createPortal(<div className="print-root">{certificateCard}</div>, document.body)}
+        createPortal(<div className="hidden print:block">{certificateCard}</div>, document.body)}
     </section>
   );
 }
